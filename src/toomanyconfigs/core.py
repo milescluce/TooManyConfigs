@@ -1,10 +1,8 @@
 import time
-import uuid
 from dataclasses import dataclass
 
 import pyperclip
 import toml
-from importcontext import get_caller
 from loguru import logger as log
 from pathlib import Path
 
