@@ -17,9 +17,11 @@ class TOMLConfig:
         self._path = None
 
     @classmethod
-    def from_toml(cls, path: Path = None):
+    def from_toml(cls, path: Path = None, **kwargs):
         """Load configuration from TOML file, prompting for missing values"""
         inst = cls()
+        for kwarg in kwargs:
+            setattr(inst, kwarg, kwargs.get(kwarg))
 
         if path:
             inst._cwd = path.parent
