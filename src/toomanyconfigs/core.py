@@ -150,7 +150,7 @@ class TOMLConfig(dict):
             path = Path.cwd() / (name + ".toml")
 
         if path.exists():
-            log.debug(f"{REPR}: Building config from {path}")
+            log.info(f"{REPR}: Building config from {path}")
             with path.open('r') as f:
                 raw_data = toml.load(f)
 

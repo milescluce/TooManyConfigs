@@ -39,29 +39,33 @@ class APIConfig(TOMLConfig):
     vars: VarsConfig
 
     def apply_variable_substitution(self):
-        """Apply variable substitution recursively to all annotated attributes"""
+        """Apply variable substitution recursively to all attributes"""
         vars_dict = self.vars
-        log.debug(f"{self.__class__.__name__}: Starting recursive variable substitution with vars: {vars_dict}")
+        log.debug(f"[{self.__class__.__name__}]: Starting recursive variable substitution with vars: {vars_dict}")
 
         self._apply_substitution_recursive(self, vars_dict, "root")
-        log.debug(f"{self.__class__.__name__}: Recursive variable substitution complete")
+        log.debug(f"[{self.__class__.__name__}]: Recursive variable substitution complete")
 
     def _apply_substitution_recursive(self, obj, vars_dict: dict, path: str = ""):
         """Recursively apply variable substitution to object attributes"""
-        log.debug(f"{self.__class__.__name__}: Processing object at path '{path}' (type: {type(obj).__name__})")
+        # log.debug(f"[{self.__class__.__name__}]: Processing object at path '{path}' (type: {type(obj).__name__})")
 
-        # Get annotations for this object's class
-        annotations = getattr(obj.__class__, '__annotations__', {})
-        log.debug(f"{self.__class__.__name__}: Found annotations: {list(annotations.keys())}")
+        # Get all attributes, excluding private ones
+        all_attrs = [attr for attr in dir(obj) if not attr.startswith('_')]
+        # log.debug(f"[{self.__class__.__name__}]: Found attributes: {all_attrs}")
 
-        for attr_name in annotations:
-            if not hasattr(obj, attr_name):
-                log.debug(f"{self.__class__.__name__}: Skipping missing attribute '{attr_name}' at path '{path}'")
+        for attr_name in all_attrs:
+            # Skip methods and properties that might cause issues
+            try:
+                attr_value = getattr(obj, attr_name)
+                if callable(attr_value):
+                    continue
+            except Exception as e:
+                # log.debug(f"[{self.__class__.__name__}]: Skipping problematic attribute '{attr_name}': {e}")
                 continue
 
-            attr_value = getattr(obj, attr_name)
             current_path = f"{path}.{attr_name}" if path != "root" else attr_name
-            log.debug(f"{self.__class__.__name__}: Processing attribute '{current_path}' with value: {attr_value} (type: {type(attr_value).__name__})")
+            # log.debug(f"[{self.__class__.__name__}]: Processing attribute '{current_path}' with value: {attr_value} (type: {type(attr_value).__name__})")
 
             if isinstance(attr_value, str):
                 # Apply variable substitution to string
@@ -74,23 +78,47 @@ class APIConfig(TOMLConfig):
                         new_value = new_value.replace(f"${{{var_key.upper()}}}", str(var_val))
                         new_value = new_value.replace(f"${var_key.upper()}", str(var_val))
                         if old_value != new_value:
-                            log.debug(f"{self.__class__.__name__}: Replaced variable '{var_key}' in '{current_path}': {old_value} → {new_value}")
+                            log.success(f"[{self.__class__.__name__}]: Replaced variable '{var_key}' in '{current_path}': {old_value} → {new_value}")
                     else:
-                        log.debug(f"{self.__class__.__name__}: Skipping empty variable '{var_key}' for '{current_path}'")
+                        # log.debug(f"[{self.__class__.__name__}]: Skipping empty variable '{var_key}' for '{current_path}'")
+                        pass
 
                 if original_value != new_value:
-                    log.debug(f"{self.__class__.__name__}: Final substitution for '{current_path}': {original_value} → {new_value}")
-                    setattr(obj, attr_name, new_value)
+                    # log.debug(f"[{self.__class__.__name__}]: Final substitution for '{current_path}': {original_value} → {new_value}")
+                    try:
+                        setattr(obj, attr_name, new_value)
+                    except AttributeError:
+                        log.debug(f"[{self.__class__.__name__}]: Cannot set read-only attribute '{current_path}'")
                 else:
-                    log.debug(f"{self.__class__.__name__}: No changes made to string '{current_path}'")
+                    log.debug(f"[{self.__class__.__name__}]: No changes made to string '{current_path}'")
 
-            elif hasattr(attr_value, '__annotations__'):
-                # This is a subconfig - recurse into it
-                log.debug(f"{self.__class__.__name__}: Recursing into subconfig '{current_path}'")
+            elif isinstance(attr_value, dict):
+                # Handle dict attributes (like shortcuts)
+                # log.debug(f"[{self.__class__.__name__}]: Processing dict attribute '{current_path}'")
+                for dict_key, dict_val in attr_value.items():
+                    if isinstance(dict_val, str):
+                        original_dict_val = dict_val
+                        new_dict_val = dict_val
+
+                        for var_key, var_val in vars_dict.items():
+                            if var_val:
+                                old_dict_val = new_dict_val
+                                new_dict_val = new_dict_val.replace(f"${{{var_key.upper()}}}", str(var_val))
+                                new_dict_val = new_dict_val.replace(f"${var_key.upper()}", str(var_val))
+                                if old_dict_val != new_dict_val:
+                                    log.success(f"[{self.__class__.__name__}]: Replaced variable '{var_key}' in '{current_path}.{dict_key}': {old_dict_val} → {new_dict_val}")
+
+                        if original_dict_val != new_dict_val:
+                            # log.debug(f"[{self.__class__.__name__}]: Final dict substitution for '{current_path}.{dict_key}': {original_dict_val} → {new_dict_val}")
+                            attr_value[dict_key] = new_dict_val
+
+            elif hasattr(attr_value, '__dict__') and not isinstance(attr_value, (int, float, bool, list, tuple)):
+                # This looks like a custom object - recurse into it
+                log.debug(f"[{self.__class__.__name__}]: Recursing into object '{current_path}'")
                 self._apply_substitution_recursive(attr_value, vars_dict, current_path)
 
             else:
-                log.debug(f"{self.__class__.__name__}: Skipping non-string/non-config attribute '{current_path}' (type: {type(attr_value).__name__})")
+                log.debug(f"[{self.__class__.__name__}]: Skipping attribute '{current_path}' (type: {type(attr_value).__name__})")
 
 class Headers:
     """Container for HTTP headers used in outgoing API requests."""
@@ -129,7 +157,6 @@ class _API:
             self.config = APIConfig.create(config)
         else:
             raise TypeError("Config must be 'APIConfig', Path, or None")
-        self.config.apply_variable_substitution()
 
 @dataclass
 class Response:
@@ -143,6 +170,9 @@ class Receptionist(_API):
 
     def __init__(self, config: APIConfig | Path | None = None):
         _API.__init__(self, config)
+
+    def __repr__(self):
+        return f"[{self.__class__.__name__}]"
 
     async def api_request(self,
                           method: str,
@@ -176,7 +206,7 @@ class Receptionist(_API):
                 for k in append_headers:
                     headers[k] = append_headers[k]
 
-        log.debug(f"{self}: Attempting request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
+        log.info(f"{self}: Attempting request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
 
         if not force_refresh:
             if path in self.cache:
@@ -261,7 +291,7 @@ class Receptionist(_API):
                 for k in append_headers:
                     headers[k] = append_headers[k]
 
-        log.debug(f"{self}: Attempting sync request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
+        log.info(f"{self}: Attempting sync request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
 
         if not force_refresh:
             if path in self.cache:

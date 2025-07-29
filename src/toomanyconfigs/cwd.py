@@ -155,7 +155,7 @@ class CWD:
                     file_path.touch()
                     log.debug(f"{self.__repr__()}: Created empty file: {file_path}")
 
-        log.debug(f"{self.__repr__()}: Ensured file structure:\n{self.tree_structure}")
+        log.info(f"{self.__repr__()}: Ensured file structure:\n{self.tree_structure}")
 
     @property
     def tree_structure(self):
