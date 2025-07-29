@@ -1,105 +1,143 @@
 import time
-from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
 import pyperclip
 import toml
 from loguru import logger as log
-from . import ACTIVE_CFGS, REPR
+from . import REPR
 
-class TOMLSubConfig:
+class TOMLSubConfig(dict):
+    def __init__(self, **kwargs):
+        super().__init__()
+
+        # Initialize with annotation defaults first
+        annotations = getattr(self.__class__, '__annotations__', {})
+        for field_name in annotations:
+            if hasattr(self.__class__, field_name):
+                default_value = getattr(self.__class__, field_name)
+                self[field_name] = default_value
+                setattr(self, field_name, default_value)
+
+        # Then update with kwargs, converting sub-dicts to subconfigs
+        for k, v in kwargs.items():
+            if isinstance(v, dict) and not isinstance(v, TOMLSubConfig):
+                # Convert dict to TOMLSubConfig
+                v = TOMLSubConfig(**v)
+            self[k] = v
+            setattr(self, k, v)
+
+    @cached_property
+    def __log_repr__(self):
+        return f"[{self.__class__.__name__}]"
+
     @classmethod
     def create(cls, source: Path = None, name: str = None, **kwargs):
         SCREPR = f"[{cls.__name__}]"
         hit = None
         if source:
             if not name: name = cls.__name__.lower()
-            log.debug(f"{REPR}: Building subconfig named {name}, from {source}")
+            log.debug(f"{REPR}: Building subconfig named '{name}' from {source}")
             with source.open('r') as f:
                 raw_data = toml.load(f)
                 hit = raw_data.get(name)
 
         if hit: kwargs = {**hit, **kwargs}
 
-        annotations = getattr(cls, '__annotations__', {})
-        # Get field info and sort
-        fields_with_defaults = []
-        fields_without_defaults = []
+        inst = cls(**kwargs)
 
-        for name, annotation in annotations.items():
-            if not name.startswith('_'):
-                has_default = hasattr(cls, name) or name in kwargs
-                if has_default:
-                    fields_with_defaults.append((name, annotation))
-                else:
-                    fields_without_defaults.append((name, annotation))
+        # Check class annotations for required fields
+        required_fields = getattr(cls, '__annotations__', {})
+        missing_fields = []
 
-        log.debug(f'{SCREPR}: Fields without defaults: {fields_without_defaults}')
-        log.debug(f'{SCREPR}: Fields with defaults: {fields_with_defaults}')
-        # Create new class with sorted fields
-        sorted_annotations = {}
-        for name, annotation in fields_without_defaults + fields_with_defaults:
-            sorted_annotations[name] = annotation
-
-        # Temporarily replace annotations
-        original_annotations = cls.__annotations__
-        cls.__annotations__ = sorted_annotations
-
-        try:
-            # Add missing kwargs as annotations dynamically
-            current_annotations = getattr(cls, '__annotations__', {}).copy()
-
-            for key, value in kwargs.items():
-                if key not in current_annotations:
-                    # Infer type from value, default to Any
-                    inferred_type = type(value) if value is not None else Any
-                    current_annotations[key] = inferred_type
-                    # Set as class attribute with default value
-                    setattr(cls, key, value if value is not None else None)
-
-            # Update annotations
-            cls.__annotations__ = current_annotations
-
-            # Apply dataclass with updated fields
-            dataclass_type = dataclass(cls)
-            log.debug(f"{SCREPR}: Annotations: {dataclass_type.__annotations__}")
-            inst = dataclass_type(**kwargs)
-        finally:
-            # Restore original annotations
-            cls.__annotations__ = original_annotations
-
-        missing_fields = [name for name in inst.__dataclass_fields__
-                         if not name.startswith('_') and getattr(inst, name) is None]
+        for field_name in required_fields:
+            if field_name not in inst or inst[field_name] is None:
+                missing_fields.append(field_name)
 
         if missing_fields:
-            log.info(f"{inst}: Missing fields detected: {missing_fields}")
+            log.info(f"{cls.__name__}: Missing fields detected: {missing_fields}")
             for field_name in missing_fields:
-                inst._prompt_field(field_name)
+                # Check if this field should be a subconfig
+                field_type = required_fields.get(field_name)
+                if field_type and hasattr(field_type, 'create') and issubclass(field_type, TOMLSubConfig):
+                    # Create the subconfig, which will handle its own prompting
+                    subconfig = field_type.create()
+                    inst[field_name] = subconfig
+                    setattr(inst, field_name, subconfig)
+                    log.success(f"{cls.__name__}: Created {field_type.__name__} for {field_name}")
+                else:
+                    inst._prompt_field(field_name)
 
         return inst
 
     def _prompt_field(self, field_name):
         time.sleep(1)
-        prompt = f"{self}: Enter value for '{field_name}' (or press Enter to paste from clipboard): "
+        prompt = f"{self.__log_repr__}: Enter value for '{field_name}' (or press Enter to paste from clipboard): "
         user_input = input(prompt).strip() or pyperclip.paste()
         if not user_input.strip():
-            log.debug(f"{self}: Using clipboard value for {field_name}")
+            log.debug(f"{self.__log_repr__}: Using clipboard value for {field_name}")
+        # Update both dict and attribute
+        self[field_name] = user_input
         setattr(self, field_name, user_input)
         time.sleep(1)
-        log.success(f"{self}: Set {field_name}")
+        log.success(f"{self.__log_repr__}: Set {field_name}")
+
+    def __setattr__(self, name, value):
+        # Keep dict and attributes in sync
+        if not name.startswith('_'):
+            self[name] = value
+        super().__setattr__(name, value)
+
+    def __setitem__(self, name, value):
+        # Keep dict and attributes in sync
+        super().__setitem__(name, value)
+        if not name.startswith('_'):
+            super().__setattr__(name, value)
 
     def as_dict(self):
-        return {
-            field.name: getattr(self, field.name)
-            for field in self.__dataclass_fields__.values()
-            if not field.name.startswith('_')
-        }
+        return {k: v for k, v in self.items() if not k.startswith('_')}
 
     def as_list(self):
-        return [name for name in self.__dataclass_fields__ if not name.startswith('_')]
+        return [k for k in self if not k.startswith('_')]
 
-class TOMLConfig:
+class TOMLConfig(dict):
+    def __init__(self, **kwargs):
+        super().__init__()
+        # Separate private attributes from config data
+        self._private = {}
+
+        # Initialize with annotation defaults first
+        annotations = getattr(self.__class__, '__annotations__', {})
+        for field_name in annotations:
+            if hasattr(self.__class__, field_name):
+                default_value = getattr(self.__class__, field_name)
+                if field_name.startswith('_'):
+                    self._private[field_name] = default_value
+                else:
+                    self[field_name] = default_value
+                    setattr(self, field_name, default_value)
+
+        # Then update with kwargs, converting sub-dicts to subconfigs
+        for k, v in kwargs.items():
+            if k.startswith('_'):
+                self._private[k] = v
+                setattr(self, k, v)
+            else:
+                if isinstance(v, dict) and not isinstance(v, (TOMLSubConfig, TOMLConfig)):
+                    # Check if we have a type annotation for this field
+                    field_type = annotations.get(k)
+                    if field_type and hasattr(field_type, 'create'):
+                        v = field_type(**v)
+                    else:
+                        v = TOMLSubConfig(**v)
+                self[k] = v
+                setattr(self, k, v)
+
+    @cached_property
+    def __log_repr__(self):
+        return f"[{self.__class__.__name__}]"
+
     @classmethod
     def create(cls, source: Path = None, **kwargs):
         # Set up paths first
@@ -120,13 +158,18 @@ class TOMLConfig:
             file_data = {}
             for name, value in raw_data.items():
                 if isinstance(value, dict):
-                    # Get field type from annotations
-                    field_type = getattr(cls, '__annotations__', {}).get(name)
-                    if field_type and hasattr(field_type, 'create'):
-                        # Pass the source path to subconfig creation
+                    # Check if we already have an instance passed in kwargs
+                    if name in kwargs and hasattr(kwargs[name], 'get'):
+                        # Use the type of the passed instance
+                        field_type = type(kwargs[name])
                         file_data[name] = field_type.create(source=path, name=name, **value)
                     else:
-                        file_data[name] = value
+                        # Try to get field type from class annotations or defaults
+                        field_type = getattr(cls, '__annotations__', {}).get(name)
+                        if field_type and hasattr(field_type, 'create'):
+                            file_data[name] = field_type.create(source=path, name=name, **value)
+                        else:
+                            file_data[name] = value
                 else:
                     file_data[name] = value
 
@@ -136,56 +179,80 @@ class TOMLConfig:
             log.warning(f"{REPR}: Config file not found at {path}, creating new one")
             path.touch(exist_ok=True)
 
-        # NOW apply dataclass with all the data
-        dataclass_cls = dataclass(cls)
-        inst = dataclass_cls(**kwargs)
+        # Add private attributes
+        kwargs['_cwd'] = cwd
+        kwargs['_path'] = path
 
-        # Set private attributes
-        inst._cwd = cwd
-        inst._path = path
+        inst = cls(**kwargs)
 
-        missing_fields = [name for name in inst.as_dict() if getattr(inst, name) is None]
+        # Check class annotations for required fields
+        required_fields = getattr(cls, '__annotations__', {})
+        missing_fields = []
+
+        for field_name in required_fields:
+            if field_name not in inst or inst[field_name] is None:
+                missing_fields.append(field_name)
+
         if missing_fields:
-            log.info(f"{inst}: Missing fields detected: {missing_fields}")
+            log.info(f"{cls.__name__}: Missing fields detected: {missing_fields}")
             for field_name in missing_fields:
-                inst._prompt_field(field_name)
+                # Check if this field should be a subconfig
+                field_type = required_fields.get(field_name)
+                if field_type and hasattr(field_type, 'create') and issubclass(field_type, TOMLSubConfig):
+                    subconfig = field_type.create(path)
+                    inst[field_name] = subconfig
+                    setattr(inst, field_name, subconfig)
+                    log.success(f"{cls.__name__}: Created {field_type.__name__} for {field_name}")
+                else:
+                    inst._prompt_field(field_name)
 
         inst.write(verbose=False)
-
         return inst
 
+    def __setattr__(self, name, value):
+        # Keep dict and attributes in sync, handle private attributes
+        if name.startswith('_'):
+            if hasattr(self, '_private'):
+                self._private[name] = value
+            super().__setattr__(name, value)
+        else:
+            self[name] = value
+            super().__setattr__(name, value)
+
+    def __setitem__(self, name, value):
+        # Keep dict and attributes in sync
+        super().__setitem__(name, value)
+        if not name.startswith('_'):
+            super().__setattr__(name, value)
 
     def as_dict(self):
-        return {
-            field.name: getattr(self, field.name)
-            for field in self.__dataclass_fields__.values()
-            if not field.name.startswith('_')
-        }
+        return {k: v for k, v in self.items() if not k.startswith('_')}
 
     def as_list(self):
-        return [name for name in self.__dataclass_fields__ if not name.startswith('_')]
+        return [k for k in self if not k.startswith('_')]
 
     def _prompt_field(self, field_name):
         time.sleep(1)
-        prompt = f"{self}: Enter value for '{field_name}' (or press Enter to paste from clipboard): "
+        prompt = f"{self.__log_repr__}: Enter value for '{field_name}' (or press Enter to paste from clipboard): "
         user_input = input(prompt).strip() or pyperclip.paste()
         if not user_input.strip():
-            log.debug(f"{self}: Using clipboard value for {field_name}")
+            log.debug(f"{self.__log_repr__}: Using clipboard value for {field_name}")
+        # Update both dict and attribute
+        self[field_name] = user_input
         setattr(self, field_name, user_input)
         time.sleep(1)
-        log.success(f"{self}: Set {field_name}")
+        log.success(f"{self.__log_repr__}: Set {field_name}")
 
     def write(self, verbose: bool = True):
-        if not self._path:
+        if not hasattr(self, '_path') or not self._path:
             raise ValueError("No path set for configuration file")
 
         config_data = {}
-        for name in self.as_dict():
-            value = getattr(self, name)
-            if value is not None:
-                # Check if value has as_dict method (nested config object)
-                if hasattr(value, 'as_dict') and callable(getattr(value, 'as_dict')):
-                    config_data[name] = value.as_dict()
+        for name, value in self.items():
+            if value is not None and not name.startswith('_'):
+                # Check if value is a dict-like config object
+                if isinstance(value, dict):
+                    config_data[name] = dict(value)
                 else:
                     config_data[name] = value
 
@@ -194,21 +261,23 @@ class TOMLConfig:
             toml.dump(config_data, f)
 
     def read(self):
-        if not self._path or not self._path.exists():
+        if not hasattr(self, '_path') or not self._path or not self._path.exists():
             return {}
         log.debug(f"{REPR}: Reading config from {self._path}")
         with self._path.open('r') as f:
             data = toml.load(f)
 
-        # Process data to reconstruct subclass objects AND update self
+        # Update self with data from file
         for name, value in data.items():
-            if isinstance(value, dict) and hasattr(self, name):
-                field_type = self.__dataclass_fields__[name].type
-                processed_value = field_type.create(**value)
-                setattr(self, name, processed_value)
-                log.debug(f"{self}: Overrode '{name}' from file!")
-            elif hasattr(self, name):
+            if isinstance(value, dict) and name in self:
+                # If it's a nested config, update it
+                current_obj = self[name]
+                if isinstance(current_obj, dict):
+                    current_obj.update(value)
+                    log.debug(f"{self.__log_repr__}: Updated '{name}' from file!")
+            else:
+                self[name] = value
                 setattr(self, name, value)
-                log.debug(f"{self}: Overrode '{name}' from file!")
+                log.debug(f"{self.__log_repr__}: Overrode '{name}' from file!")
 
-        return data  # Still return the raw data if needed
+        return data

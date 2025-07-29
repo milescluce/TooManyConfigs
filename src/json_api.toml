@@ -1,0 +1,12 @@
+[routes]
+base = "https://jsonplaceholder.typicode.com/"
+
+[vars]
+api_key = "foobar"
+
+[headers]
+authorization = "Bearer ${API_KEY}"
+accept = "application/json"
+
+[routes.shortcuts]
+c = "/comments?postId=1"

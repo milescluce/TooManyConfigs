@@ -15,38 +15,32 @@ class HeadersConfig(TOMLSubConfig):
     authorization: str = "Bearer ${API_KEY}"
     accept: str = "application/json"
 
-HeadersConfig.to_headers = HeadersConfig.as_dict
+    def to_headers(self):
+        return self.as_dict()
 
 class Shortcuts(TOMLSubConfig):
-    def __getitem__(self, key: str) -> str:
-        return self.as_dict()[key]
+    pass
 
 class RoutesConfig(TOMLSubConfig):
-    """Configuration for URLs and routes"""
-    base: str = ""
-    routes: Shortcuts = None
+    """Configuration for URLs and shortcuts"""
+    base: str = None
+    shortcuts: Shortcuts
 
-    def __post_init__(self):
-        if self.routes is None:
-            self.routes = Shortcuts.create()
-
-    def __getitem__(self, key: str) -> str:
-        if key not in self.routes:
-            raise KeyError(f"Missing route: {key}")
-        return self.base + self.routes[key]
+    def get(self, item):
+        return str(self.base + self.shortcuts[item])
 
 class VarsConfig(TOMLSubConfig):
     """Configuration for variable substitution"""
 
 class APIConfig(TOMLConfig):
     """Main API configuration with sub-configs"""
-    headers: HeadersConfig = field(default_factory=HeadersConfig.create)
-    routes: RoutesConfig = field(default_factory=RoutesConfig.create)
-    vars: VarsConfig = field(default_factory=VarsConfig.create)
+    headers: HeadersConfig
+    routes: RoutesConfig
+    vars: VarsConfig
 
     def apply_variable_substitution(self):
         """Apply variable substitution to string fields"""
-        vars_dict = self.vars.as_dict()
+        vars_dict = self.vars
 
         # Apply to headers
         for field_name in self.headers.as_list():
@@ -119,7 +113,7 @@ class Receptionist(_API):
 
     async def api_request(self,
                           method: str,
-                          route: str,
+                          route: str = None,
                           append: str = "",
                           format: dict = None,
                           force_refresh: bool = False,
@@ -127,10 +121,14 @@ class Receptionist(_API):
                           override_headers: dict = None,
                           **kw
                           ) -> Response:
-        try:
-            path = self.config.routes[route]
-        except KeyError:
-            path = route
+        if not route:
+            path = self.config.routes.base
+        else:
+            try:
+                path = self.config.routes.get(route)
+            except KeyError:
+                path = self.config.routes.base
+                path = path + str(route)
 
         if format:
             path = path.format(**format)

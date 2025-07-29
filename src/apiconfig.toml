@@ -1,0 +1,10 @@
+[headers]
+authorization = "Bearer ${API_KEY}"
+accept = "application/json"
+
+[routes]
+base = "http://example.com"
+
+[vars]
+
+[routes.shortcuts]
