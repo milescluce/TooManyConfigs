@@ -3,10 +3,11 @@ base = "https://jsonplaceholder.typicode.com/"
 
 [vars]
 api_key = "foobar"
+id_key = 1
 
 [headers]
 authorization = "Bearer ${API_KEY}"
 accept = "application/json"
 
 [routes.shortcuts]
-c = "/comments?postId=1"
+c = "/comments?postId=${ID_KEY}"

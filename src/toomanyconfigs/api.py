@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import httpx
 from loguru import logger as log
 
-from . import TOMLSubConfig
+from . import TOMLSubConfig, DEBUG
 from .core import TOMLConfig
 
 class HeadersConfig(TOMLSubConfig):
@@ -39,86 +39,71 @@ class APIConfig(TOMLConfig):
     vars: VarsConfig
 
     def apply_variable_substitution(self):
-        """Apply variable substitution recursively to all attributes"""
+        """Apply variable substitution recursively to all dict values"""
         vars_dict = self.vars
-        log.debug(f"[{self.__class__.__name__}]: Starting recursive variable substitution with vars: {vars_dict}")
+        if DEBUG:
+            log.debug(f"[{self.__class__.__name__}]: Starting variable substitution with vars: {vars_dict}")
 
-        self._apply_substitution_recursive(self, vars_dict, "root")
-        log.debug(f"[{self.__class__.__name__}]: Recursive variable substitution complete")
+        self._substitute_dict_values(self, vars_dict)
+        if DEBUG:
+            log.debug(f"[{self.__class__.__name__}]: Variable substitution complete")
 
-    def _apply_substitution_recursive(self, obj, vars_dict: dict, path: str = ""):
-        """Recursively apply variable substitution to object attributes"""
-        # log.debug(f"[{self.__class__.__name__}]: Processing object at path '{path}' (type: {type(obj).__name__})")
+    def _substitute_dict_values(self, obj, vars_dict: dict):
+        """Recursively substitute variables in all string values within dict-like objects"""
+        if DEBUG:
+            log.debug(f"[{self.__class__.__name__}]: Processing dict-like object: {type(obj).__name__}")
 
-        # Get all attributes, excluding private ones
-        all_attrs = [attr for attr in dir(obj) if not attr.startswith('_')]
-        # log.debug(f"[{self.__class__.__name__}]: Found attributes: {all_attrs}")
+        # Handle both regular dicts and dict-like config objects
+        if hasattr(obj, 'items'):
+            items = obj.items()
+        elif hasattr(obj, '__dict__'):
+            items = obj.__dict__.items()
+        else:
+            if DEBUG:
+                log.debug(f"[{self.__class__.__name__}]: Object {type(obj).__name__} is not dict-like, skipping")
+            return
 
-        for attr_name in all_attrs:
-            # Skip methods and properties that might cause issues
-            try:
-                attr_value = getattr(obj, attr_name)
-                if callable(attr_value):
-                    continue
-            except Exception as e:
-                # log.debug(f"[{self.__class__.__name__}]: Skipping problematic attribute '{attr_name}': {e}")
-                continue
+        for key, value in items:
+            if key.startswith('_'):
+                continue  # Skip private attributes
 
-            current_path = f"{path}.{attr_name}" if path != "root" else attr_name
-            # log.debug(f"[{self.__class__.__name__}]: Processing attribute '{current_path}' with value: {attr_value} (type: {type(attr_value).__name__})")
+            if DEBUG:
+                log.debug(f"[{self.__class__.__name__}]: Processing key '{key}' with value: {value} (type: {type(value).__name__})")
 
-            if isinstance(attr_value, str):
+            if isinstance(value, str):
                 # Apply variable substitution to string
-                original_value = attr_value
-                new_value = attr_value
+                original_value = value
+                new_value = value
 
                 for var_key, var_val in vars_dict.items():
                     if var_val:
                         old_value = new_value
                         new_value = new_value.replace(f"${{{var_key.upper()}}}", str(var_val))
                         new_value = new_value.replace(f"${var_key.upper()}", str(var_val))
-                        if old_value != new_value:
-                            log.success(f"[{self.__class__.__name__}]: Replaced variable '{var_key}' in '{current_path}': {old_value} → {new_value}")
-                    else:
-                        # log.debug(f"[{self.__class__.__name__}]: Skipping empty variable '{var_key}' for '{current_path}'")
-                        pass
+                        if old_value != new_value and DEBUG:
+                            log.debug(f"[{self.__class__.__name__}]: Replaced '{var_key}' in '{key}': {old_value} → {new_value}")
 
                 if original_value != new_value:
-                    # log.debug(f"[{self.__class__.__name__}]: Final substitution for '{current_path}': {original_value} → {new_value}")
+                    log.success(f"[{self.__class__.__name__}]: Final substitution for '{key}': {original_value} → {new_value}")
                     try:
-                        setattr(obj, attr_name, new_value)
-                    except AttributeError:
-                        log.debug(f"[{self.__class__.__name__}]: Cannot set read-only attribute '{current_path}'")
-                else:
-                    log.debug(f"[{self.__class__.__name__}]: No changes made to string '{current_path}'")
+                        if hasattr(obj, 'items'):
+                            obj[key] = new_value  # Regular dict
+                        else:
+                            setattr(obj, key, new_value)  # Config object
+                    except (AttributeError, TypeError) as e:
+                        if DEBUG:
+                            log.debug(f"[{self.__class__.__name__}]: Cannot set '{key}': {e}")
+                elif DEBUG:
+                    log.debug(f"[{self.__class__.__name__}]: No changes for '{key}'")
 
-            elif isinstance(attr_value, dict):
-                # Handle dict attributes (like shortcuts)
-                # log.debug(f"[{self.__class__.__name__}]: Processing dict attribute '{current_path}'")
-                for dict_key, dict_val in attr_value.items():
-                    if isinstance(dict_val, str):
-                        original_dict_val = dict_val
-                        new_dict_val = dict_val
+            elif isinstance(value, (dict, object)) and not isinstance(value, (int, float, bool, list, tuple, str)):
+                # Recurse into dict-like objects
+                if DEBUG:
+                    log.debug(f"[{self.__class__.__name__}]: Recursing into '{key}'")
+                self._substitute_dict_values(value, vars_dict)
 
-                        for var_key, var_val in vars_dict.items():
-                            if var_val:
-                                old_dict_val = new_dict_val
-                                new_dict_val = new_dict_val.replace(f"${{{var_key.upper()}}}", str(var_val))
-                                new_dict_val = new_dict_val.replace(f"${var_key.upper()}", str(var_val))
-                                if old_dict_val != new_dict_val:
-                                    log.success(f"[{self.__class__.__name__}]: Replaced variable '{var_key}' in '{current_path}.{dict_key}': {old_dict_val} → {new_dict_val}")
-
-                        if original_dict_val != new_dict_val:
-                            # log.debug(f"[{self.__class__.__name__}]: Final dict substitution for '{current_path}.{dict_key}': {original_dict_val} → {new_dict_val}")
-                            attr_value[dict_key] = new_dict_val
-
-            elif hasattr(attr_value, '__dict__') and not isinstance(attr_value, (int, float, bool, list, tuple)):
-                # This looks like a custom object - recurse into it
-                log.debug(f"[{self.__class__.__name__}]: Recursing into object '{current_path}'")
-                self._apply_substitution_recursive(attr_value, vars_dict, current_path)
-
-            else:
-                log.debug(f"[{self.__class__.__name__}]: Skipping attribute '{current_path}' (type: {type(attr_value).__name__})")
+            elif DEBUG:
+                log.debug(f"[{self.__class__.__name__}]: Skipping '{key}' (type: {type(value).__name__})")
 
 class Headers:
     """Container for HTTP headers used in outgoing API requests."""

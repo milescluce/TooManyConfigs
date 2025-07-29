@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     base_url = 'https://jsonplaceholder.typicode.com/'
     quick_routes = {
-        "c": "/comments?postId=1"
+        "c": "/comments?postId=${ID_KEY}"
     }
     routes = RoutesConfig(
         base=base_url,
@@ -131,6 +131,7 @@ if __name__ == "__main__":
     )
     class JSONVars(VarsConfig):
         api_key: str = None
+        id_key: str = 1
 
     json_vars = JSONVars.create(_source=src, _name="vars")
 
