@@ -136,6 +136,7 @@ if __name__ == "__main__":
 
     cfg = APIConfig.create(_source=src, routes=routes, vars=json_vars)
     json_placeholder = API(cfg)
+    json_placeholder.config.apply_variable_substitution()
     log.debug(json_placeholder.config.__dict__)
     response = asyncio.run(json_placeholder.api_get("c"))
     log.debug(response)

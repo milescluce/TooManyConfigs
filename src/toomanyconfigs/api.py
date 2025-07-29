@@ -39,25 +39,58 @@ class APIConfig(TOMLConfig):
     vars: VarsConfig
 
     def apply_variable_substitution(self):
-        """Apply variable substitution to string fields"""
+        """Apply variable substitution recursively to all annotated attributes"""
         vars_dict = self.vars
+        log.debug(f"{self.__class__.__name__}: Starting recursive variable substitution with vars: {vars_dict}")
 
-        # Apply to headers
-        for field_name in self.headers.as_list():
-            value = getattr(self.headers, field_name)
-            if isinstance(value, str):
+        self._apply_substitution_recursive(self, vars_dict, "root")
+        log.debug(f"{self.__class__.__name__}: Recursive variable substitution complete")
+
+    def _apply_substitution_recursive(self, obj, vars_dict: dict, path: str = ""):
+        """Recursively apply variable substitution to object attributes"""
+        log.debug(f"{self.__class__.__name__}: Processing object at path '{path}' (type: {type(obj).__name__})")
+
+        # Get annotations for this object's class
+        annotations = getattr(obj.__class__, '__annotations__', {})
+        log.debug(f"{self.__class__.__name__}: Found annotations: {list(annotations.keys())}")
+
+        for attr_name in annotations:
+            if not hasattr(obj, attr_name):
+                log.debug(f"{self.__class__.__name__}: Skipping missing attribute '{attr_name}' at path '{path}'")
+                continue
+
+            attr_value = getattr(obj, attr_name)
+            current_path = f"{path}.{attr_name}" if path != "root" else attr_name
+            log.debug(f"{self.__class__.__name__}: Processing attribute '{current_path}' with value: {attr_value} (type: {type(attr_value).__name__})")
+
+            if isinstance(attr_value, str):
+                # Apply variable substitution to string
+                original_value = attr_value
+                new_value = attr_value
+
                 for var_key, var_val in vars_dict.items():
                     if var_val:
-                        value = value.replace(f"${{{var_key.upper()}}}", str(var_val))
-                        value = value.replace(f"${var_key.upper()}", str(var_val))
-                setattr(self.headers, field_name, value)
+                        old_value = new_value
+                        new_value = new_value.replace(f"${{{var_key.upper()}}}", str(var_val))
+                        new_value = new_value.replace(f"${var_key.upper()}", str(var_val))
+                        if old_value != new_value:
+                            log.debug(f"{self.__class__.__name__}: Replaced variable '{var_key}' in '{current_path}': {old_value} → {new_value}")
+                    else:
+                        log.debug(f"{self.__class__.__name__}: Skipping empty variable '{var_key}' for '{current_path}'")
 
-        # Apply to URL base
-        if self.routes.base:
-            for var_key, var_val in vars_dict.items():
-                if var_val:
-                    self.routes.base = self.routes.base.replace(f"${{{var_key.upper()}}}", str(var_val))
-                    self.routes.base = self.routes.base.replace(f"${var_key.upper()}", str(var_val))
+                if original_value != new_value:
+                    log.debug(f"{self.__class__.__name__}: Final substitution for '{current_path}': {original_value} → {new_value}")
+                    setattr(obj, attr_name, new_value)
+                else:
+                    log.debug(f"{self.__class__.__name__}: No changes made to string '{current_path}'")
+
+            elif hasattr(attr_value, '__annotations__'):
+                # This is a subconfig - recurse into it
+                log.debug(f"{self.__class__.__name__}: Recursing into subconfig '{current_path}'")
+                self._apply_substitution_recursive(attr_value, vars_dict, current_path)
+
+            else:
+                log.debug(f"{self.__class__.__name__}: Skipping non-string/non-config attribute '{current_path}' (type: {type(attr_value).__name__})")
 
 class Headers:
     """Container for HTTP headers used in outgoing API requests."""
