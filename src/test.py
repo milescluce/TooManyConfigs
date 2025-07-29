@@ -180,3 +180,39 @@ if __name__ == "__main__":
 # 
 # [routes.shortcuts]
 # c = "/comments?postId=1"
+
+#CWD
+#Basic Usage
+from toomanyconfigs import CWD
+
+class Test5(CWD):
+    def __init__(self):
+        super().__init__({"foobar.py": "print('Hello, World!')"})
+
+if __name__ == "__main__":
+    t = Test5()
+    log.debug(t.cwd)
+
+# Example usage with recursive nested structure
+
+
+c = CWD(
+    "test.txt",                          # Simple file
+    {"src": {                           # Nested folder structure
+        "main.py": None,                # File in src/
+        "utils": {                      # Nested folder src/utils/
+            "helpers.py": None,
+            "config": {                 # Deeply nested src/utils/config/
+                "settings.toml": None,
+                "database.toml": None
+            }
+        },
+        "tests": ["test_main.py", "test_utils.py"]  # List of files in src/tests/
+    }},
+    {"docs": ["readme.md", "changelog.md"]},  # Multiple files in docs/
+    Path("logs/app.log")                # Path object
+)
+
+log.debug(f"CWD: {c}")
+log.debug(f"File structure count: {len(c.file_structure)}")
+c.list_structure()

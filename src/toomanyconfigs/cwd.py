@@ -38,15 +38,16 @@ class CWDNamespace:
         return name
 
     def __repr__(self):
-        return f"<CWDNamespace {self._name}>"
+        return f"[CWDNamespace.{self._name}]"
 
 class CWD:
-    def __init__(self, ensure: bool = True, *args: Union[str, dict, Path]):
-        self.base_path = Path(__file__).parent
+    def __init__(self, *args: Union[str, dict, Path], ensure: bool = True):
+        self.cwd = Path.cwd()
         self.file_structure = []
+        self.file_content = {}
 
         for arg in args:
-            self._process_arg(arg, self.base_path)
+            self._process_arg(arg, self.cwd)
 
         # Create nested namespace structure
         self._create_nested_namespaces()
@@ -70,8 +71,15 @@ class CWD:
                 folder_path = base_path / key
 
                 if isinstance(value, str):
-                    # key is folder, value is file
-                    file_path = folder_path / value
+                    # key is filename, value is default content
+                    file_path = folder_path
+                    self.file_structure.append(file_path)
+                    self.file_content[file_path] = value
+                    log.debug(f"{self.__repr__()}: Added file with content: {file_path}")
+
+                elif value is None:
+                    # key is filename, no default content
+                    file_path = folder_path
                     self.file_structure.append(file_path)
 
                 elif isinstance(value, list):
@@ -84,7 +92,7 @@ class CWD:
                     self._process_arg(value, folder_path)
 
         elif isinstance(arg, Path):
-            # If it's already a Path, add it relative to base_path if not absolute
+            # If it's already a Path, add it relative to cwd if not absolute
             if arg.is_absolute():
                 self.file_structure.append(arg)
             else:
@@ -93,15 +101,15 @@ class CWD:
     def _create_nested_namespaces(self):
         """Create nested namespace structure for file access"""
         for file_path in self.file_structure:
-            # Get relative path from base_path
-            rel_path = file_path.relative_to(self.base_path)
+            # Get relative path from cwd
+            rel_path = file_path.relative_to(self.cwd)
             path_parts = rel_path.parts
 
             if len(path_parts) == 1:
                 # Root level file
                 attr_name = self._clean_name(path_parts[0])
                 setattr(self, attr_name, file_path)
-                log.debug(f"Created root namespace: self.{attr_name} -> {file_path}")
+                log.debug(f"{self.__repr__()}: Created root namespace: self.{attr_name} -> {file_path}")
             else:
                 # Nested file - create/get the namespace structure
                 current_ns = self
@@ -109,14 +117,14 @@ class CWD:
                     dir_name = self._clean_name(part)
                     if not hasattr(current_ns, dir_name):
                         setattr(current_ns, dir_name, CWDNamespace(dir_name))
-                        log.debug(f"Created namespace: {dir_name}")
+                        log.debug(f"{self.__repr__()}: Created namespace: {dir_name}")
                     current_ns = getattr(current_ns, dir_name)
 
                 # Set the final file
                 file_name = self._clean_name(path_parts[-1])
                 setattr(current_ns, file_name, file_path)
                 namespace_path = '.'.join([self._clean_name(p) for p in path_parts[:-1]])
-                log.debug(f"Created nested namespace: self.{namespace_path}.{file_name} -> {file_path}")
+                log.debug(f"{self.__repr__()}: Created nested namespace: self.{namespace_path}.{file_name} -> {file_path}")
 
     def _clean_name(self, name):
         """Clean a name to be a valid Python identifier"""
@@ -138,9 +146,16 @@ class CWD:
         for file_path in self.file_structure:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             if not file_path.exists():
-                file_path.touch()
+                if file_path in self.file_content:
+                    # Write default content
+                    file_path.write_text(self.file_content[file_path])
+                    log.debug(f"{self.__repr__()}: Created file with content: {file_path}")
+                else:
+                    # Create empty file
+                    file_path.touch()
+                    log.debug(f"{self.__repr__()}: Created empty file: {file_path}")
 
-        log.debug(f"Created file structure:\n{self.tree_structure}")
+        log.debug(f"{self.__repr__()}: Ensured file structure:\n{self.tree_structure}")
 
     @property
     def tree_structure(self):
@@ -151,13 +166,13 @@ class CWD:
         # Group files by directory for better tree display
         dirs = {}
         for file_path in self.file_structure:
-            rel_path = file_path.relative_to(self.base_path)
+            rel_path = file_path.relative_to(self.cwd)
             parent = rel_path.parent
             if parent not in dirs:
                 dirs[parent] = []
             dirs[parent].append(rel_path.name)
 
-        lines = []
+        lines = [self.__str__()]
         sorted_dirs = sorted(dirs.keys())
 
         for i, dir_path in enumerate(sorted_dirs):
@@ -188,36 +203,11 @@ class CWD:
     def list_structure(self):
         """List all files in the structure"""
         for file_path in self.file_structure:
-            log.debug(f"File: {file_path}")
+            content_info = " (with content)" if file_path in self.file_content else ""
+            log.debug(f"{self.__repr__()}: File: {file_path}{content_info}")
 
     def __str__(self):
-        return str(self.base_path)
+        return str(self.cwd)
 
     def __repr__(self):
-        return f"CWD({self.base_path})"
-
-if __name__ == "__main__":
-    # Example usage with recursive nested structure
-    c = CWD(
-        "test.txt",                          # Simple file
-        {"src": {                           # Nested folder structure
-            "main.py": None,                # File in src/
-            "utils": {                      # Nested folder src/utils/
-                "helpers.py": None,
-                "config": {                 # Deeply nested src/utils/config/
-                    "settings.toml": None,
-                    "database.toml": None
-                }
-            },
-            "tests": ["test_main.py", "test_utils.py"]  # List of files in src/tests/
-        }},
-        {"docs": ["readme.md", "changelog.md"]},  # Multiple files in docs/
-        Path("logs/app.log")                # Path object
-    )
-
-    log.debug(f"CWD: {c}")
-    log.debug(f"File structure count: {len(c.file_structure)}")
-    c.list_structure()
-
-    # Optionally create the files
-    # c.ensure_files()
+        return f"[{self.__class__.__name__}]"
