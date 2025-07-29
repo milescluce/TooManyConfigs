@@ -196,5 +196,90 @@ class Receptionist(_API):
         return await self.api_request("delete", route, append=append, format=format, force_refresh=force_refresh,
                                       append_headers=append_headers, **kw)
 
+    def sync_api_request(self,
+                         method: str,
+                         route: str = None,
+                         append: str = "",
+                         format: dict = None,
+                         force_refresh: bool = False,
+                         append_headers: dict = None,
+                         override_headers: dict = None,
+                         **kw
+                         ) -> Response:
+        if not route:
+            path = self.config.routes.base
+        else:
+            try:
+                path = self.config.routes.get(route)
+            except KeyError:
+                path = self.config.routes.base
+                path = path + str(route)
+
+        if format:
+            path = path.format(**format)
+        if append:
+            path += append
+
+        if override_headers:
+            headers = override_headers
+        else:
+            headers = self.config.headers.to_headers()
+            if append_headers:
+                for k in append_headers:
+                    headers[k] = append_headers[k]
+
+        log.debug(f"{self}: Attempting sync request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
+
+        if not force_refresh:
+            if path in self.cache:
+                cache: Response = self.cache[path]
+                log.debug(f"{self}: Found cache containing same route\n  - cache={cache}")
+                if cache.method is method:
+                    log.debug(
+                        f"{self}: Cache hit for API Request:\n  - request_path={path}\n  - request_method={method}")
+                    return self.cache[path]
+                else:
+                    log.warning(
+                        f"{self}: No match! Cache was {cache.method}, while this request is {method}! Continuing...")
+
+        with httpx.Client(headers=headers) as client:
+            response = client.request(method.upper(), path, **kw)
+
+            try:
+                content_type = response.headers.get("Content-Type", "")
+                if "json" in content_type:
+                    content = response.json()
+                else:
+                    content = response.text
+            except Exception as e:
+                content = response.text  # always fallback
+                log.warning(f"{self}: Bad response decode → {e} | Fallback body: {content}")
+
+            out = Response(
+                status=response.status_code,
+                method=method,
+                headers=dict(response.headers),
+                body=content,
+            )
+
+            self.cache[path] = out
+            return self.cache[path]
+
+    def sync_api_get(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
+        return self.sync_api_request("get", route, append=append, format=format, force_refresh=force_refresh,
+                                     append_headers=append_headers, **kw)
+
+    def sync_api_post(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
+        return self.sync_api_request("post", route, append=append, format=format, force_refresh=force_refresh,
+                                     append_headers=append_headers, **kw)
+
+    def sync_api_put(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
+        return self.sync_api_request("put", route, append=append, format=format, force_refresh=force_refresh,
+                                     append_headers=append_headers, **kw)
+
+    def sync_api_delete(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
+        return self.sync_api_request("delete", route, append=append, format=format, force_refresh=force_refresh,
+                                     append_headers=append_headers, **kw)
+
 API = Receptionist
 

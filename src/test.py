@@ -139,6 +139,8 @@ if __name__ == "__main__":
     log.debug(json_placeholder.config.__dict__)
     response = asyncio.run(json_placeholder.api_get("c"))
     log.debug(response)
+    sync_response = json_placeholder.sync_api_get("c")
+    log.debug(sync_response)
 
 # Example STDOUT
 # 2025-07-29 01:54:10.820 | DEBUG    | toomanyconfigs.core:create:41 - [TooManyConfigs]: Building subconfig named 'shortcuts' from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\json_api.toml
@@ -170,6 +172,10 @@ if __name__ == "__main__":
 # 
 # [routes.shortcuts]
 # c = "/comments?postId=1"
+
+#API Receptionist
+
+
 
 #CWD
 #Basic Usage
