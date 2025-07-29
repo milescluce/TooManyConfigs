@@ -33,15 +33,15 @@ class TOMLSubConfig(dict):
         return f"[{self.__class__.__name__}]"
 
     @classmethod
-    def create(cls, source: Path = None, name: str = None, **kwargs):
+    def create(cls, _source: Path = None, _name: str = None, **kwargs):
         SCREPR = f"[{cls.__name__}]"
         hit = None
-        if source:
-            if not name: name = cls.__name__.lower()
-            log.debug(f"{REPR}: Building subconfig named '{name}' from {source}")
-            with source.open('r') as f:
+        if _source:
+            if not _name: _name = cls.__name__.lower()
+            log.debug(f"{REPR}: Building subconfig named '{_name}' from {_source}")
+            with _source.open('r') as f:
                 raw_data = toml.load(f)
-                hit = raw_data.get(name)
+                hit = raw_data.get(_name)
 
         if hit: kwargs = {**hit, **kwargs}
 
@@ -139,10 +139,10 @@ class TOMLConfig(dict):
         return f"[{self.__class__.__name__}]"
 
     @classmethod
-    def create(cls, source: Path = None, **kwargs):
+    def create(cls, _source: Path = None, **kwargs):
         # Set up paths first
-        if source:
-            path = Path(source)
+        if _source:
+            path = Path(_source)
             cwd = path.parent
         else:
             cwd = Path.cwd()
@@ -162,12 +162,12 @@ class TOMLConfig(dict):
                     if name in kwargs and hasattr(kwargs[name], 'get'):
                         # Use the type of the passed instance
                         field_type = type(kwargs[name])
-                        file_data[name] = field_type.create(source=path, name=name, **value)
+                        file_data[name] = field_type.create(_source=path, _name=name, **value)
                     else:
                         # Try to get field type from class annotations or defaults
                         field_type = getattr(cls, '__annotations__', {}).get(name)
                         if field_type and hasattr(field_type, 'create'):
-                            file_data[name] = field_type.create(source=path, name=name, **value)
+                            file_data[name] = field_type.create(_source=path, _name=name, **value)
                         else:
                             file_data[name] = value
                 else:

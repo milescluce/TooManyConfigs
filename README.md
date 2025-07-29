@@ -150,25 +150,20 @@ if __name__ == "__main__":
     }
     routes = RoutesConfig(
         base=base_url,
-        shortcuts=Shortcuts.create(
-            source=src,
-            **quick_routes
-        )
+        shortcuts=Shortcuts.create(_source=src, **quick_routes)
     )
-    
+
+
     class JSONVars(VarsConfig):
         api_key: str = None
+
 
     json_vars = JSONVars.create(
         source=src,
         name="vars"
     )
 
-    cfg = APIConfig.create(
-        source=src,
-        routes=routes,
-        vars=json_vars
-    )
+    cfg = APIConfig.create(_source=src, routes=routes, vars=json_vars)
     json_placeholder = API(cfg)
     log.debug(json_placeholder.config.__dict__)
     response = asyncio.run(json_placeholder.api_get("c"))

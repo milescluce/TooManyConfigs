@@ -10,7 +10,7 @@ class Test(TOMLConfig):
     foo: str = None #Each field that should prompt user input should be 'None'
 
 if __name__ == "__main__":
-    Test.create() #Without specifying a path, TOMLDataclass will automatically make a .toml in your cwd with the name of your inheriting class.
+    Test.create()  #Without specifying a path, TOMLDataclass will automatically make a .toml in your cwd with the name of your inheriting class.
 
 #Example STDOUT
 # 2025-07-29 01:06:55.623 | WARNING  | toomanyconfigs.core:create:164 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test.toml, creating new one
@@ -27,7 +27,7 @@ class Test2(TOMLConfig):
     bar: int = 33 #We'll set bar at 33 to demonstrate the translation ease between dynamic python objects and .toml
 
 if __name__ == "__main__":
-    t = Test2.create() #initialize a dataclass from a .toml
+    t = Test2.create()  #initialize a dataclass from a .toml
     log.debug(t.bar) #view t.bar
     t.bar = 34 #override python memory
     log.debug(t.bar) #view updated t.bar
@@ -127,24 +127,14 @@ if __name__ == "__main__":
     }
     routes = RoutesConfig(
         base=base_url,
-        shortcuts=Shortcuts.create(
-            source=src,
-            **quick_routes
-        )
+        shortcuts=Shortcuts.create(_source=src, **quick_routes)
     )
     class JSONVars(VarsConfig):
         api_key: str = None
 
-    json_vars = JSONVars.create(
-        source=src,
-        name="vars"
-    )
+    json_vars = JSONVars.create(_source=src, _name="vars")
 
-    cfg = APIConfig.create(
-        source=src,
-        routes=routes,
-        vars=json_vars
-    )
+    cfg = APIConfig.create(_source=src, routes=routes, vars=json_vars)
     json_placeholder = API(cfg)
     log.debug(json_placeholder.config.__dict__)
     response = asyncio.run(json_placeholder.api_get("c"))
