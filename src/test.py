@@ -195,6 +195,7 @@ if __name__ == "__main__":
 
 
 c = CWD(
+    "testfolder/",
     "test.txt",                          # Simple file
     {"src": {                           # Nested folder structure
         "main.py": None,                # File in src/

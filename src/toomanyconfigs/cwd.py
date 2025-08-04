@@ -44,6 +44,7 @@ class CWD:
     def __init__(self, *args: Union[str, dict, Path], ensure: bool = True):
         self.cwd = Path.cwd()
         self.file_structure = []
+        self.folder_structure = []
         self.file_content = {}
 
         for arg in args:
@@ -57,8 +58,15 @@ class CWD:
     def _process_arg(self, arg: Union[str, dict, Path, list], base_path: Path):
         """Recursively process arguments to build file structure"""
         if isinstance(arg, str):
-            file_path = base_path / arg
-            self.file_structure.append(file_path)
+            if arg.endswith('/'):
+                # It's a folder
+                folder_path = base_path / arg.rstrip('/')
+                self.folder_structure.append(folder_path)
+                log.debug(f"{self.__repr__()}: Added folder: {folder_path}")
+            else:
+                # It's a file
+                file_path = base_path / arg
+                self.file_structure.append(file_path)
 
         elif isinstance(arg, list):
             # Handle list of items
@@ -126,6 +134,27 @@ class CWD:
                 namespace_path = '.'.join([self._clean_name(p) for p in path_parts[:-1]])
                 log.debug(f"{self.__repr__()}: Created nested namespace: self.{namespace_path}.{file_name} -> {file_path}")
 
+        # Also create namespaces for standalone folders
+        for folder_path in self.folder_structure:
+            rel_path = folder_path.relative_to(self.cwd)
+            path_parts = rel_path.parts
+
+            if len(path_parts) == 1:
+                # Root level folder
+                attr_name = self._clean_name(path_parts[0])
+                if not hasattr(self, attr_name):
+                    setattr(self, attr_name, CWDNamespace(attr_name))
+                    log.debug(f"{self.__repr__()}: Created root folder namespace: self.{attr_name}")
+            else:
+                # Nested folder
+                current_ns = self
+                for part in path_parts:
+                    dir_name = self._clean_name(part)
+                    if not hasattr(current_ns, dir_name):
+                        setattr(current_ns, dir_name, CWDNamespace(dir_name))
+                        log.debug(f"{self.__repr__()}: Created nested folder namespace: {dir_name}")
+                    current_ns = getattr(current_ns, dir_name)
+
     def _clean_name(self, name):
         """Clean a name to be a valid Python identifier"""
         # Remove file extension for cleaner access
@@ -143,6 +172,12 @@ class CWD:
 
     def ensure_files(self):
         """Create all files and directories in the file structure"""
+        # Create standalone folders first
+        for folder_path in self.folder_structure:
+            folder_path.mkdir(parents=True, exist_ok=True)
+            log.debug(f"{self.__repr__()}: Created folder: {folder_path}")
+
+        # Then create files
         for file_path in self.file_structure:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             if not file_path.exists():
@@ -160,17 +195,23 @@ class CWD:
     @property
     def tree_structure(self):
         """Return the file structure as a tree-formatted string"""
-        if not self.file_structure:
+        if not self.file_structure and not self.folder_structure:
             return "Empty file structure"
 
         # Group files by directory for better tree display
         dirs = {}
-        for file_path in self.file_structure:
-            rel_path = file_path.relative_to(self.cwd)
+        all_paths = self.file_structure + self.folder_structure
+
+        for path in all_paths:
+            rel_path = path.relative_to(self.cwd)
             parent = rel_path.parent
             if parent not in dirs:
-                dirs[parent] = []
-            dirs[parent].append(rel_path.name)
+                dirs[parent] = {'files': [], 'folders': []}
+
+            if path in self.folder_structure:
+                dirs[parent]['folders'].append(rel_path.name)
+            else:
+                dirs[parent]['files'].append(rel_path.name)
 
         lines = [self.__str__()]
         sorted_dirs = sorted(dirs.keys())
@@ -179,29 +220,39 @@ class CWD:
             is_last_dir = i == len(sorted_dirs) - 1
 
             if str(dir_path) == '.':
-                # Root files
-                for j, file_name in enumerate(sorted(dirs[dir_path])):
-                    is_last_file = j == len(dirs[dir_path]) - 1 and is_last_dir
-                    prefix = "└── " if is_last_file else "├── "
-                    lines.append(f"{prefix}{file_name}")
+                # Root items
+                all_items = [(name, 'folder') for name in sorted(dirs[dir_path]['folders'])] + \
+                           [(name, 'file') for name in sorted(dirs[dir_path]['files'])]
+
+                for j, (item_name, item_type) in enumerate(all_items):
+                    is_last_item = j == len(all_items) - 1 and is_last_dir
+                    prefix = "└── " if is_last_item else "├── "
+                    suffix = "/" if item_type == 'folder' else ""
+                    lines.append(f"{prefix}{item_name}{suffix}")
             else:
                 # Directory
                 dir_prefix = "└── " if is_last_dir else "├── "
                 lines.append(f"{dir_prefix}{dir_path}/")
 
-                # Files in directory
-                for j, file_name in enumerate(sorted(dirs[dir_path])):
-                    is_last_file = j == len(dirs[dir_path]) - 1
+                # Items in directory
+                all_items = [(name, 'folder') for name in sorted(dirs[dir_path]['folders'])] + \
+                           [(name, 'file') for name in sorted(dirs[dir_path]['files'])]
+
+                for j, (item_name, item_type) in enumerate(all_items):
+                    is_last_item = j == len(all_items) - 1
                     if is_last_dir:
-                        file_prefix = "    └── " if is_last_file else "    ├── "
+                        item_prefix = "    └── " if is_last_item else "    ├── "
                     else:
-                        file_prefix = "│   └── " if is_last_file else "│   ├── "
-                    lines.append(f"{file_prefix}{file_name}")
+                        item_prefix = "│   └── " if is_last_item else "│   ├── "
+                    suffix = "/" if item_type == 'folder' else ""
+                    lines.append(f"{item_prefix}{item_name}{suffix}")
 
         return "\n".join(lines)
 
     def list_structure(self):
         """List all files in the structure"""
+        for folder_path in self.folder_structure:
+            log.debug(f"{self.__repr__()}: Folder: {folder_path}")
         for file_path in self.file_structure:
             content_info = " (with content)" if file_path in self.file_content else ""
             log.debug(f"{self.__repr__()}: File: {file_path}{content_info}")
