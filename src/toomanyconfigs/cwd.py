@@ -10,8 +10,8 @@ class CWDNamespace:
         return f"[CWDNamespace: {self._path}]"
 
 class CWD:
-    def __init__(self, *args: Union[str, dict], ensure: bool = True):
-        self.cwd = Path.cwd()
+    def __init__(self, *args: Union[str, dict], ensure: bool = True, path: Path = Path.cwd()):
+        self.cwd = path
         self.file_structure = []
         self.folder_structure = []
         self.file_content = {}

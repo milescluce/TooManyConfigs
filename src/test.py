@@ -196,13 +196,25 @@ class Test5(CWD):
                     "empty_file.txt": None,
                     "filled_file.txt": lorem_ipsum
                 }
-            }
+            },
+            path=Path.cwd() / "test5"
 
         )
-
 if __name__ == "__main__":
     t = Test5()
     f = t.filled_folder_demo
     e = f.empty_file
     log.debug(f)
     log.debug(e)
+    
+#STDOUT
+# 2025-08-04 16:31:57.346 | INFO     | toomanyconfigs.cwd:ensure_files:93 - [CWD: C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test5]: Created file structure:
+# C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test5
+# ├── foobar.py
+# ├── filled_folder_demo/
+# │   ├── empty_file.txt
+# │   └── filled_file.txt
+# └── folder_demo/
+#     └── nested_folder_demo/
+# 2025-08-04 16:31:57.346 | DEBUG    | __main__:<module>:208 - [CWDNamespace: C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test5\filled_folder_demo]
+# 2025-08-04 16:31:57.346 | DEBUG    | __main__:<module>:209 - C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test5\filled_folder_demo\empty_file.txt
