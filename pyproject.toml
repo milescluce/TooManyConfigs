@@ -1,6 +1,6 @@
 [project]
 name = "toomanyconfigs"
-version = "0.2.8"
+version = "0.2.81"
 description = ""
 authors = [
     {name = "Miles Copeland Luce"}
