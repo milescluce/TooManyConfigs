@@ -35,18 +35,37 @@ if __name__ == "__main__":
     data = t.read() #ensure overwriting
     log.debug(data)
 
+    path: Path = t._path #stored path of the config
+    path.unlink(missing_ok=True)
+    del t
+
+    my_values = {
+        "foo": "resurrected_bar",
+        "bar": 99
+    }
+    t = Test2.create(prompt_empty_fields=False, **my_values)
+    log.debug(t.bar)  # view t.bar
+    data = t.read() #read again
+    log.debug(data)
+
 #Example STDOUT
-# 2025-07-29 01:06:59.539 | WARNING  | toomanyconfigs.core:create:164 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml, creating new one
-# 2025-07-29 01:06:59.541 | INFO     | toomanyconfigs.core:create:182 - [Test2]: Missing fields detected: ['foo']
+# 2025-08-08 00:30:58.028 | WARNING  | toomanyconfigs.core:create:191 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml, creating new one
+# 2025-08-08 00:30:58.030 | INFO     | toomanyconfigs.core:create:209 - Test2: Missing fields detected: ['foo']
 # [Test2]: Enter value for 'foo' (or press Enter to paste from clipboard): bar
-# 2025-07-29 01:07:31.410 | SUCCESS  | toomanyconfigs.core:_prompt_field:226 - [Test2]: Set foo
-# 2025-07-29 01:07:31.413 | DEBUG    | __main__:<module>:35 - 33
-# 2025-07-29 01:07:31.413 | DEBUG    | __main__:<module>:37 - 34
-# 2025-07-29 01:07:31.414 | DEBUG    | toomanyconfigs.core:write:241 - [TooManyConfigs]: Writing config to C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
-# 2025-07-29 01:07:31.416 | DEBUG    | toomanyconfigs.core:read:248 - [TooManyConfigs]: Reading config from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
-# 2025-07-29 01:07:31.421 | DEBUG    | toomanyconfigs.core:read:263 - [Test2]: Overrode 'foo' from file!
-# 2025-07-29 01:07:31.421 | DEBUG    | toomanyconfigs.core:read:263 - [Test2]: Overrode 'bar' from file!
-# 2025-07-29 01:07:31.421 | DEBUG    | __main__:<module>:40 - {'foo': 'bar', 'bar': 34}
+# 2025-08-08 00:31:07.399 | SUCCESS  | toomanyconfigs.core:_prompt_field:258 - [Test2]: Set foo
+# 2025-08-08 00:31:07.400 | DEBUG    | __main__:<module>:31 - 33
+# 2025-08-08 00:31:07.400 | DEBUG    | __main__:<module>:33 - 34
+# 2025-08-08 00:31:07.400 | DEBUG    | toomanyconfigs.core:write:273 - [TooManyConfigs]: Writing config to C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# 2025-08-08 00:31:07.401 | DEBUG    | toomanyconfigs.core:read:280 - [TooManyConfigs]: Reading config from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# 2025-08-08 00:31:07.402 | DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'foo' from file!
+# 2025-08-08 00:31:07.402 | DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'bar' from file!
+# 2025-08-08 00:31:07.402 | DEBUG    | __main__:<module>:36 - {'foo': 'bar', 'bar': 34}
+# 2025-08-08 00:31:07.402 | WARNING  | toomanyconfigs.core:create:191 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml, creating new one
+# 2025-08-08 00:31:07.403 | DEBUG    | __main__:<module>:47 - 99
+# 2025-08-08 00:31:07.404 | DEBUG    | toomanyconfigs.core:read:280 - [TooManyConfigs]: Reading config from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# 2025-08-08 00:31:07.405 | DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'foo' from file!
+# 2025-08-08 00:31:07.405 | DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'bar' from file!
+# 2025-08-08 00:31:07.405 | DEBUG    | __main__:<module>:49 - {'foo': 'resurrected_bar', 'bar': 99}
 
 #Subconfigs:
 #Usage

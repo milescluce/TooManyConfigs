@@ -50,14 +50,24 @@ if __name__ == "__main__":
 
 Output:
 ```
-WARNING  | toomanyconfigs.core:create:164 - [TooManyConfigs]: Config file not found, creating new one
-INFO     | toomanyconfigs.core:create:182 - [Test2]: Missing fields detected: ['foo']
-[Test2]: Enter value for 'foo' (or press Enter to paste from clipboard): bar
-SUCCESS  | toomanyconfigs.core:_prompt_field:226 - [Test2]: Set foo
-DEBUG    | __main__:<module>:35 - 33
-DEBUG    | __main__:<module>:37 - 34
-DEBUG    | toomanyconfigs.core:write:241 - [TooManyConfigs]: Writing config to test2.toml
-DEBUG    | __main__:<module>:40 - {'foo': 'bar', 'bar': 34}
+#Example STDOUT
+# WARNING  | toomanyconfigs.core:create:191 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml, creating new one
+# INFO     | toomanyconfigs.core:create:209 - Test2: Missing fields detected: ['foo']
+# [Test2]: Enter value for 'foo' (or press Enter to paste from clipboard): bar
+# SUCCESS  | toomanyconfigs.core:_prompt_field:258 - [Test2]: Set foo
+# DEBUG    | __main__:<module>:31 - 33
+# DEBUG    | __main__:<module>:33 - 34
+# DEBUG    | toomanyconfigs.core:write:273 - [TooManyConfigs]: Writing config to C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# DEBUG    | toomanyconfigs.core:read:280 - [TooManyConfigs]: Reading config from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'foo' from file!
+# DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'bar' from file!
+# DEBUG    | __main__:<module>:36 - {'foo': 'bar', 'bar': 34}
+# WARNING  | toomanyconfigs.core:create:191 - [TooManyConfigs]: Config file not found at C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml, creating new one
+# DEBUG    | __main__:<module>:47 - 99
+# DEBUG    | toomanyconfigs.core:read:280 - [TooManyConfigs]: Reading config from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\test2.toml
+# DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'foo' from file!
+# DEBUG    | toomanyconfigs.core:read:295 - [Test2]: Overrode 'bar' from file!
+# DEBUG    | __main__:<module>:49 - {'foo': 'resurrected_bar', 'bar': 99}
 ```
 
 ## Subconfigs

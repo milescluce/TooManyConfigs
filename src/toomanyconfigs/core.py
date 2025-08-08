@@ -33,8 +33,13 @@ class TOMLSubConfig(dict):
         return f"[{self.__class__.__name__}]"
 
     @classmethod
-    def create(cls, _source: Path = None, _name: str = None, **kwargs):
-        SCREPR = f"[{cls.__name__}]"
+    def create(
+        cls,
+        _source: Path = None,
+        _name: str = None,
+        prompt_empty_fields = True,
+        **kwargs
+    ):
         hit = None
         if _source:
             if not _name: _name = cls.__name__.lower()
@@ -67,7 +72,9 @@ class TOMLSubConfig(dict):
                     setattr(inst, field_name, subconfig)
                     log.success(f"{cls.__name__}: Created {field_type.__name__} for {field_name}")
                 else:
-                    inst._prompt_field(field_name)
+                    if prompt_empty_fields:
+                        inst._prompt_field(field_name)
+                    else: log.warning(f"{inst}: Skipping empty field '{field_name}'")
 
         return inst
 
@@ -139,7 +146,12 @@ class TOMLConfig(dict):
         return f"[{self.__class__.__name__}]"
 
     @classmethod
-    def create(cls, _source: Path = None, **kwargs):
+    def create(
+        cls,
+        _source: Path = None,
+        prompt_empty_fields: bool = True,
+        **kwargs
+    ):
         # Set up paths first
         if _source:
             path = Path(_source)
@@ -204,7 +216,9 @@ class TOMLConfig(dict):
                     setattr(inst, field_name, subconfig)
                     log.success(f"{cls.__name__}: Created {field_type.__name__} for {field_name}")
                 else:
-                    inst._prompt_field(field_name)
+                    if prompt_empty_fields:
+                        inst._prompt_field(field_name)
+                    else: log.warning(f"{inst}: Skipping empty field '{field_name}'")
 
         inst.write(verbose=False)
         return inst
