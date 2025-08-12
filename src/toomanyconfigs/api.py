@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 import httpx
@@ -9,6 +8,7 @@ from loguru import logger as log
 
 from . import TOMLSubConfig, DEBUG
 from .core import TOMLConfig
+
 
 class HeadersConfig(TOMLSubConfig):
     """Configuration for HTTP headers"""
@@ -18,8 +18,10 @@ class HeadersConfig(TOMLSubConfig):
     def to_headers(self):
         return self.as_dict()
 
+
 class Shortcuts(TOMLSubConfig):
     pass
+
 
 class RoutesConfig(TOMLSubConfig):
     """Configuration for URLs and shortcuts"""
@@ -29,8 +31,10 @@ class RoutesConfig(TOMLSubConfig):
     def get(self, item):
         return str(self.base + self.shortcuts[item])
 
+
 class VarsConfig(TOMLSubConfig):
     """Configuration for variable substitution"""
+
 
 class APIConfig(TOMLConfig):
     """Main API configuration with sub-configs"""
@@ -68,7 +72,8 @@ class APIConfig(TOMLConfig):
                 continue  # Skip private attributes
 
             if DEBUG:
-                log.debug(f"[{self.__class__.__name__}]: Processing key '{key}' with value: {value} (type: {type(value).__name__})")
+                log.debug(
+                    f"[{self.__class__.__name__}]: Processing key '{key}' with value: {value} (type: {type(value).__name__})")
 
             if isinstance(value, str):
                 # Apply variable substitution to string
@@ -81,10 +86,12 @@ class APIConfig(TOMLConfig):
                         new_value = new_value.replace(f"${{{var_key.upper()}}}", str(var_val))
                         new_value = new_value.replace(f"${var_key.upper()}", str(var_val))
                         if old_value != new_value and DEBUG:
-                            log.debug(f"[{self.__class__.__name__}]: Replaced '{var_key}' in '{key}': {old_value} → {new_value}")
+                            log.debug(
+                                f"[{self.__class__.__name__}]: Replaced '{var_key}' in '{key}': {old_value} → {new_value}")
 
                 if original_value != new_value:
-                    log.success(f"[{self.__class__.__name__}]: Final substitution for '{key}': {original_value} → {new_value}")
+                    log.success(
+                        f"[{self.__class__.__name__}]: Final substitution for '{key}': {original_value} → {new_value}")
                     try:
                         if hasattr(obj, 'items'):
                             obj[key] = new_value  # Regular dict
@@ -104,6 +111,7 @@ class APIConfig(TOMLConfig):
 
             elif DEBUG:
                 log.debug(f"[{self.__class__.__name__}]: Skipping '{key}' (type: {type(value).__name__})")
+
 
 class Headers:
     """Container for HTTP headers used in outgoing API requests."""
@@ -134,6 +142,7 @@ class Headers:
     def as_dict(self):
         return self.index
 
+
 class _API:
     def __init__(self, config: APIConfig | Path = None):
         if isinstance(config, APIConfig):
@@ -142,6 +151,20 @@ class _API:
             self.config = APIConfig.create(config)
         else:
             raise TypeError("Config must be 'APIConfig', Path, or None")
+
+
+@dataclass
+class Request:
+    method: str
+    path: str
+    headers: dict
+    force_refresh: bool = False
+    kwargs: dict = field(default_factory=dict)
+
+    @property
+    def as_dict(self) -> dict:
+        return self.__dict__.copy()
+
 
 @dataclass
 class Response:
@@ -161,184 +184,209 @@ class Response:
             index[key] = str(value)
         return index
 
-class Receptionist(_API):
-    cache: dict[str | SimpleNamespace] = {}
 
-    def __init__(self, config: APIConfig | Path | None = None):
+class ResponseFields:
+    path: str
+    status: str
+    method: str
+    headers: str
+    body: str
+
+
+class Receptionist(_API):
+    cache: dict[str | Response] = {}
+    database: Any
+
+    def __init__(self, config: APIConfig | Path | None = None, database: bool = False):
+        from p2d2 import Database
         _API.__init__(self, config)
+
+        class APIDB(Database):
+            responses: ResponseFields
+
+        if database:
+            self.database = APIDB(db_name=self.__class__.__name__)
 
     def __repr__(self):
         return f"[{self.__class__.__name__}]"
 
-    async def api_request(self,
-                          method: str,
-                          route: str = None,
-                          append: str = "",
-                          format: dict = None,
-                          force_refresh: bool = False,
-                          append_headers: dict = None,
-                          override_headers: dict = None,
-                          **kw
-                          ) -> Response:
+    @property
+    def database_enabled(self):
+        return bool(getattr(self, "database", None))
+
+    @property
+    def cache_enabled(self):
+        return not self.database_enabled
+
+    def _build_path(self, route: str = None, append: str = "", format: dict = None):
+        """Build the full request path"""
         if not route:
             path = self.config.routes.base
         else:
             try:
                 path = self.config.routes.get(route)
             except KeyError:
-                path = self.config.routes.base
-                path = path + str(route)
+                path = self.config.routes.base + str(route)
 
         if format:
             path = path.format(**format)
         if append:
             path += append
+        return path
 
+    def _build_headers(self, append_headers: dict = None, override_headers: dict = None):
+        """Build request headers"""
         if override_headers:
-            headers = override_headers
-        else:
-            headers = self.config.headers.to_headers()
-            if append_headers:
-                for k in append_headers:
-                    headers[k] = append_headers[k]
+            return override_headers
 
-        log.info(f"{self}: Attempting request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
+        headers = self.config.headers.to_headers()
+        if append_headers:
+            headers.update(append_headers)
+        return headers
 
-        if not force_refresh:
-            if path in self.cache:
-                cache: Response = self.cache[path]
-                log.debug(f"{self}: Found cache containing same route\n  - cache={cache}")
-                if cache.method is method:
-                    log.debug(
-                        f"{self}: Cache hit for API Request:\n  - request_path={path}\n  - request_method={method}")
-                    return self.cache[path]
-                else:
-                    log.warning(
-                        f"{self}: No match! Cache was {cache.method}, while this request is {method}! Continuing...")
+    def _check_cache(self, path: str, method: str, force_refresh: bool):
+        """Check cache for existing response"""
+        if force_refresh:
+            return None
 
-        async with httpx.AsyncClient(headers=headers) as client:
-            response = await client.request(method.upper(), path, **kw)
+        if self.database_enabled:
+            with self.database.table(self.database.responses) as t:
+                from p2d2.database import TableProxy
+                t: TableProxy
+                df = t.read()
+                match = df[(df['path'] == path) & (df['method'] == method)]
+                if not match.empty:
+                    first_match = match.iloc[0]
+                    log.debug(f"{self}: Database hit for {method.upper()} {path}")
+                    return Response(
+                        status=int(first_match['status']),
+                        method=first_match['method'],
+                        headers=eval(first_match['headers']),
+                        body=eval(first_match['body'])
+                    )
+            return None
 
+        elif self.cache_enabled:
+            if path not in self.cache:
+                return None
+
+            cached = self.cache[path]
+            if cached.method == method:
+                log.debug(f"{self}: Cache hit for {method.upper()} {path}")
+                return cached
+            else:
+                log.warning(f"{self}: Cache method mismatch: {cached.method} != {method}")
+                return None
+
+        log.warning(f"{self}: Neither cache nor database enabled")
+        return None
+
+    def _make_response(self, request: Request, httpx_response, method: str, signature: str = None):
+        """Convert httpx response to our Response object"""
+        try:
+            content_type = httpx_response.headers.get("Content-Type", "")
+            content = httpx_response.json() if "json" in content_type else httpx_response.text
+        except Exception as e:
+            content = httpx_response.text
+            log.warning(f"{self}: Response decode error: {e}")
+
+        resp = Response(
+            status=httpx_response.status_code,
+            method=method,
+            headers=dict(httpx_response.headers),
+            body=content,
+        )
+
+        if self.database_enabled:
+            data = resp.as_serialized_dict
+            data["path"] = request.path
             try:
-                content_type = response.headers.get("Content-Type", "")
-                if "json" in content_type:
-                    content = response.json()
-                else:
-                    content = response.text
+                with self.database.table(self.database.responses) as t:
+                    from p2d2.database import TableProxy
+                    t: TableProxy
+                    t.create(signature=signature, **data)
             except Exception as e:
-                content = response.text  # always fallback
-                log.warning(f"{self}: Bad response decode → {e} | Fallback body: {content}")
+                log.warning(f"{self}: Could not persist request to database: {e}")
 
-            out = Response(
-                status=response.status_code,
-                method=method,
-                headers=dict(response.headers),
-                body=content,
-            )
+        return resp
 
-            self.cache[path] = out
-            return self.cache[path]
+    def _prep_request(self, method: str, **kwargs):
+        """Prepare request parameters"""
+        request = Request(
+            method=method,
+            path=self._build_path(kwargs.pop('route', None),
+                                  kwargs.pop('append', ''),
+                                  kwargs.pop('format', None)),
+            headers=self._build_headers(kwargs.pop('append_headers', None),
+                                        kwargs.pop('override_headers', None)),
+            force_refresh=kwargs.pop('force_refresh', False),
+            kwargs=kwargs
+        )
 
-    async def api_get(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return await self.api_request("get", route, append=append, format=format, force_refresh=force_refresh,
-                                      append_headers=append_headers, **kw)
+        log.info(f"{self}: {request.method.upper()} request to {request.path}")
 
-    async def api_post(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return await self.api_request("post", route, append=append, format=format, force_refresh=force_refresh,
-                                      append_headers=append_headers, **kw)
+        # Check cache first
+        if cached := self._check_cache(request.path, request.method, request.force_refresh):
+            return cached
 
-    async def api_put(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return await self.api_request("put", route, append=append, format=format, force_refresh=force_refresh,
-                                      append_headers=append_headers, **kw)
+        return request
 
-    async def api_delete(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return await self.api_request("delete", route, append=append, format=format, force_refresh=force_refresh,
-                                      append_headers=append_headers, **kw)
+    def sync_api_request(self, method: str, signature: str = None, **kwargs) -> Response:
+        result = self._prep_request(method, **kwargs)
 
-    def sync_api_request(self,
-                         method: str,
-                         route: str = None,
-                         append: str = "",
-                         format: dict = None,
-                         force_refresh: bool = False,
-                         append_headers: dict = None,
-                         override_headers: dict = None,
-                         **kw
-                         ) -> Response:
-        if not route:
-            path = self.config.routes.base
-        else:
-            try:
-                path = self.config.routes.get(route)
-            except KeyError:
-                path = self.config.routes.base
-                path = path + str(route)
+        if isinstance(result, Response):
+            return result
+        elif isinstance(result, Request):
+            request: Request = result
+            with httpx.Client(headers=request.headers) as client:
+                response = client.request(request.method.upper(), request.path, **request.kwargs)
 
-        if format:
-            path = path.format(**format)
-        if append:
-            path += append
+            out = self._make_response(request, response, request.method, signature=signature)
+            if self.cache_enabled:
+                self.cache[request.path] = out
+            return out
 
-        if override_headers:
-            headers = override_headers
-        else:
-            headers = self.config.headers.to_headers()
-            if append_headers:
-                for k in append_headers:
-                    headers[k] = append_headers[k]
+    async def api_request(self, method: str, signature: str = None, **kwargs) -> Response:
+        result = self._prep_request(method, **kwargs)
 
-        log.info(f"{self}: Attempting sync request to API:\n  - method={method}\n  - headers={headers}\n  - path={path}")
+        # If it's a Response, return it (cache hit)
+        if isinstance(result, Response):
+            return result
 
-        if not force_refresh:
-            if path in self.cache:
-                cache: Response = self.cache[path]
-                log.debug(f"{self}: Found cache containing same route\n  - cache={cache}")
-                if cache.method is method:
-                    log.debug(
-                        f"{self}: Cache hit for API Request:\n  - request_path={path}\n  - request_method={method}")
-                    return self.cache[path]
-                else:
-                    log.warning(
-                        f"{self}: No match! Cache was {cache.method}, while this request is {method}! Continuing...")
+        # Otherwise it's a Request object, make the request
+        request: Request = result
+        async with httpx.AsyncClient(headers=request.headers) as client:
+            response = await client.request(request.method.upper(), request.path, **request.kwargs)
 
-        with httpx.Client(headers=headers) as client:
-            response = client.request(method.upper(), path, **kw)
+        out = self._make_response(request, response, request.method, signature=signature)
+        if self.cache_enabled:
+            self.cache[request.path] = out
+        return out
 
-            try:
-                content_type = response.headers.get("Content-Type", "")
-                if "json" in content_type:
-                    content = response.json()
-                else:
-                    content = response.text
-            except Exception as e:
-                content = response.text  # always fallback
-                log.warning(f"{self}: Bad response decode → {e} | Fallback body: {content}")
+    # Async methods
+    async def api_get(self, route=None, signature: str = None, **kwargs):
+        return await self.api_request("get", route=route, signature=signature, **kwargs)
 
-            out = Response(
-                status=response.status_code,
-                method=method,
-                headers=dict(response.headers),
-                body=content,
-            )
+    async def api_post(self, route=None, signature: str = None, **kwargs):
+        return await self.api_request("post", route=route, signature=signature, **kwargs)
 
-            self.cache[path] = out
-            return self.cache[path]
+    async def api_put(self, route=None, signature: str = None, **kwargs):
+        return await self.api_request("put", route=route, signature=signature, **kwargs)
 
-    def sync_api_get(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return self.sync_api_request("get", route, append=append, format=format, force_refresh=force_refresh,
-                                     append_headers=append_headers, **kw)
+    async def api_delete(self, route=None, signature: str = None, **kwargs):
+        return await self.api_request("delete", route=route, signature=signature, **kwargs)
 
-    def sync_api_post(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return self.sync_api_request("post", route, append=append, format=format, force_refresh=force_refresh,
-                                     append_headers=append_headers, **kw)
+    # Sync methods
+    def sync_api_get(self, route=None, signature: str = None, **kwargs):
+        return self.sync_api_request("get", route=route, signature=signature, **kwargs)
 
-    def sync_api_put(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return self.sync_api_request("put", route, append=append, format=format, force_refresh=force_refresh,
-                                     append_headers=append_headers, **kw)
+    def sync_api_post(self, route=None, signature: str = None, **kwargs):
+        return self.sync_api_request("post", route=route, signature=signature, **kwargs)
 
-    def sync_api_delete(self, route, append=None, format=None, force_refresh=False, append_headers=None, **kw):
-        return self.sync_api_request("delete", route, append=append, format=format, force_refresh=force_refresh,
-                                     append_headers=append_headers, **kw)
+    def sync_api_put(self, route=None, signature: str = None, **kwargs):
+        return self.sync_api_request("put", route=route, signature=signature, **kwargs)
+
+    def sync_api_delete(self, route=None, signature: str = None, **kwargs):
+        return self.sync_api_request("delete", route=route, signature=signature, **kwargs)
 
 API = Receptionist
-
