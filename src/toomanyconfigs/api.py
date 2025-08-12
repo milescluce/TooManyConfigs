@@ -150,6 +150,17 @@ class Response:
     headers: dict
     body: Any
 
+    @property
+    def as_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    @property
+    def as_serialized_dict(self):
+        index = self.as_dict
+        for key, value in index.items():
+            index[key] = str(value)
+        return index
+
 class Receptionist(_API):
     cache: dict[str | SimpleNamespace] = {}
 

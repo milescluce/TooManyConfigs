@@ -162,6 +162,8 @@ if __name__ == "__main__":
     log.debug(response)
     sync_response = json_placeholder.sync_api_get("c")
     log.debug(sync_response)
+    log.debug(sync_response.as_dict)
+    log.debug(sync_response.as_serialized_dict)
 
 # Example STDOUT
 # 2025-07-29 01:54:10.820 | DEBUG    | toomanyconfigs.core:create:41 - [TooManyConfigs]: Building subconfig named 'shortcuts' from C:\Users\foobar\PycharmProjects\TooManyConfigs\src\json_api.toml
