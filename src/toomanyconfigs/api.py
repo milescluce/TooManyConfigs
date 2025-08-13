@@ -258,11 +258,12 @@ class Receptionist(_API):
                 if not match.empty:
                     first_match = match.iloc[0]
                     log.debug(f"{self}: Database hit for {method.upper()} {path}")
+                    import ast
                     return Response(
                         status=int(first_match['status']),
                         method=first_match['method'],
-                        headers=eval(first_match['headers']),
-                        body=eval(first_match['body'])
+                        headers=ast.literal_eval(first_match['headers']),
+                        body=ast.literal_eval(first_match['body'])
                     )
             return None
 
