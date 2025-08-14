@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -258,13 +259,17 @@ class Receptionist(_API):
                 if not match.empty:
                     first_match = match.iloc[0]
                     log.debug(f"{self}: Database hit for {method.upper()} {path}")
-                    import ast
-                    return Response(
-                        status=int(first_match['status']),
-                        method=first_match['method'],
-                        headers=ast.literal_eval(first_match['headers']),
-                        body=ast.literal_eval(first_match['body'])
-                    )
+                    try:
+                        import ast
+                        return Response(
+                            status=int(first_match['status']),
+                            method=first_match['method'],
+                            headers=json.loads(first_match['headers']),
+                            body=json.loads(first_match['body'])
+                        )
+                    except (json.JSONDecodeError, ValueError) as e:
+                        log.warning(f"{self}: Error deserializing cached response: {e}")
+                        return None
             return None
 
         elif self.cache_enabled:
