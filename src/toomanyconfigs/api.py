@@ -179,7 +179,7 @@ class Response:
         return self.__dict__.copy()
 
     @property
-    def as_serialized_dict(self):
+    def as_serialized_dict(self) -> dict:
         index = self.as_dict
         for key, value in index.items():
             index[key] = str(value)
@@ -206,7 +206,7 @@ class Receptionist(_API):
             responses: ResponseFields
 
         if database:
-            self.database = APIDB(db_name=self.__class__.__name__)
+            self.database: Database = APIDB(db_name=self.__class__.__name__)
 
     def __repr__(self):
         return f"[{self.__class__.__name__}]"
@@ -251,25 +251,22 @@ class Receptionist(_API):
             return None
 
         if self.database_enabled:
-            with self.database.table(self.database.responses) as t:
-                from p2d2.database import TableProxy
-                t: TableProxy
-                df = t.read()
-                match = df[(df['path'] == path) & (df['method'] == method)]
-                if not match.empty:
-                    first_match = match.iloc[0]
-                    log.debug(f"{self}: Database hit for {method.upper()} {path}")
-                    try:
-                        import ast
-                        return Response(
-                            status=int(first_match['status']),
-                            method=first_match['method'],
-                            headers=json.loads(first_match['headers']),
-                            body=json.loads(first_match['body'])
-                        )
-                    except (json.JSONDecodeError, ValueError) as e:
-                        log.warning(f"{self}: Error deserializing cached response: {e}")
-                        return None
+            from p2d2 import Database
+            df = getattr(self.database, "responses")
+            match = df[(df['path'] == path) & (df['method'] == method)]
+            if not match.empty:
+                first_match = match.iloc[0]
+                log.debug(f"{self}: Database hit for {method.upper()} {path}")
+                try:
+                    return Response(
+                        status=int(first_match['status']),
+                        method=first_match['method'],
+                        headers=first_match['headers'],
+                        body=first_match['body']
+                    )
+                except (json.JSONDecodeError, ValueError) as e:
+                    log.warning(f"{self}: Error deserializing cached response: {e}")
+                    return None
             return None
 
         elif self.cache_enabled:
@@ -287,7 +284,7 @@ class Receptionist(_API):
         log.warning(f"{self}: Neither cache nor database enabled")
         return None
 
-    def _make_response(self, request: Request, httpx_response, method: str, signature: str = None):
+    def _make_response(self, request: Request, httpx_response, method: str, signature: str = None) -> Response:
         """Convert httpx response to our Response object"""
         try:
             content_type = httpx_response.headers.get("Content-Type", "")
@@ -307,10 +304,9 @@ class Receptionist(_API):
             data = resp.as_serialized_dict
             data["path"] = request.path
             try:
-                with self.database.table(self.database.responses) as t:
-                    from p2d2.database import TableProxy
-                    t: TableProxy
-                    t.create(signature=signature, **data)
+                from p2d2 import Database
+                self.database: Database
+                self.database.create("responses", signature, **data)
             except Exception as e:
                 log.warning(f"{self}: Could not persist request to database: {e}")
 
@@ -337,7 +333,7 @@ class Receptionist(_API):
 
         return request
 
-    def sync_api_request(self, method: str, signature: str = None, **kwargs) -> Response:
+    def sync_api_request(self, method: str, signature: str = None, **kwargs) -> Response | None:
         result = self._prep_request(method, **kwargs)
 
         if isinstance(result, Response):

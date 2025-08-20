@@ -1,12 +1,13 @@
 import time
 from functools import cached_property
 from pathlib import Path
-from typing import Any
 
 import pyperclip
 import toml
 from loguru import logger as log
+
 from . import REPR
+
 
 class TOMLSubConfig(dict):
     def __init__(self, **kwargs):
@@ -34,11 +35,11 @@ class TOMLSubConfig(dict):
 
     @classmethod
     def create(
-        cls,
-        _source: Path = None,
-        _name: str = None,
-        prompt_empty_fields = True,
-        **kwargs
+            cls,
+            _source: Path = None,
+            _name: str = None,
+            prompt_empty_fields=True,
+            **kwargs
     ):
         hit = None
         if _source:
@@ -74,7 +75,8 @@ class TOMLSubConfig(dict):
                 else:
                     if prompt_empty_fields:
                         inst._prompt_field(field_name)
-                    else: log.warning(f"{inst}: Skipping empty field '{field_name}'")
+                    else:
+                        log.warning(f"{inst}: Skipping empty field '{field_name}'")
 
         return inst
 
@@ -108,7 +110,10 @@ class TOMLSubConfig(dict):
     def as_list(self):
         return [k for k in self if not k.startswith('_')]
 
+
 class TOMLConfig(dict):
+    _path: Path
+
     def __init__(self, **kwargs):
         super().__init__()
         # Separate private attributes from config data
@@ -147,10 +152,10 @@ class TOMLConfig(dict):
 
     @classmethod
     def create(
-        cls,
-        _source: Path = None,
-        prompt_empty_fields: bool = True,
-        **kwargs
+            cls,
+            _source: Path = None,
+            prompt_empty_fields: bool = True,
+            **kwargs
     ):
         # Set up paths first
         if _source:
@@ -218,7 +223,8 @@ class TOMLConfig(dict):
                 else:
                     if prompt_empty_fields:
                         inst._prompt_field(field_name)
-                    else: log.warning(f"{inst}: Skipping empty field '{field_name}'")
+                    else:
+                        log.warning(f"{inst}: Skipping empty field '{field_name}'")
 
         inst.write(verbose=False)
         return inst
@@ -272,7 +278,7 @@ class TOMLConfig(dict):
 
         if verbose: log.debug(f"{REPR}: Writing config to {self._path}")
         with self._path.open('w') as f:
-            toml.dump(config_data, f)
+            toml.dump(config_data, f) #type: ignore
 
     def read(self):
         if not hasattr(self, '_path') or not self._path or not self._path.exists():
