@@ -301,14 +301,18 @@ class Receptionist(_API):
         )
 
         if self.database_enabled:
-            data = resp.as_serialized_dict
+            data = resp.as_dict
             data["path"] = request.path
             try:
                 from p2d2 import Database
                 self.database: Database
                 self.database.create("responses", signature, **data)
-            except Exception as e:
-                log.warning(f"{self}: Could not persist request to database: {e}")
+            except ValueError as e:
+                if "Must have equal len keys and value" in str(e):
+                    log.error(f"{self}: Could not persist request to database: {e}")
+                    log.error(f"Data keys: {list(data.keys())}")
+                    log.error(f"Data values: {list(data.values())}")
+                    log.error(f"Data: {data}")
 
         return resp
 
