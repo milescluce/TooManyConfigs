@@ -258,11 +258,16 @@ class Receptionist(_API):
                 first_match = match.iloc[0]
                 log.debug(f"{self}: Database hit for {method.upper()} {path}")
                 try:
+                    headers = json.loads(first_match['headers']) if isinstance(first_match['headers'], str) else \
+                    first_match['headers']
+                    body = json.loads(first_match['body']) if isinstance(first_match['body'], str) else first_match[
+                        'body']
+
                     return Response(
                         status=int(first_match['status']),
                         method=first_match['method'],
-                        headers=first_match['headers'],
-                        body=first_match['body']
+                        headers=headers,
+                        body=body
                     )
                 except (json.JSONDecodeError, ValueError) as e:
                     log.warning(f"{self}: Error deserializing cached response: {e}")
