@@ -258,10 +258,22 @@ class Receptionist(_API):
                 first_match = match.iloc[0]
                 log.debug(f"{self}: Database hit for {method.upper()} {path}")
                 try:
+                    # Handle headers
                     headers = json.loads(first_match['headers']) if isinstance(first_match['headers'], str) else \
                     first_match['headers']
-                    body = json.loads(first_match['body']) if isinstance(first_match['body'], str) else first_match[
-                        'body']
+
+                    # Handle body - check for empty content
+                    body_value = first_match['body']
+                    if isinstance(body_value, str):
+                        if body_value.strip() == "":
+                            body = ""  # Keep as empty string
+                        else:
+                            try:
+                                body = json.loads(body_value)
+                            except json.JSONDecodeError:
+                                body = body_value  # Keep as string if not valid JSON
+                    else:
+                        body = body_value
 
                     return Response(
                         status=int(first_match['status']),
@@ -293,10 +305,22 @@ class Receptionist(_API):
         """Convert httpx response to our Response object"""
         try:
             content_type = httpx_response.headers.get("Content-Type", "")
-            content = httpx_response.json() if "json" in content_type else httpx_response.text
+
+            # Check for empty content first
+            if not httpx_response.content:
+                content = ""
+            elif "json" in content_type:
+                try:
+                    content = httpx_response.json()
+                except (ValueError, json.JSONDecodeError):
+                    content = httpx_response.text
+            else:
+                content = httpx_response.text
+
         except Exception as e:
-            content = httpx_response.text
+            # content = httpx_response.text
             log.warning(f"{self}: Response decode error: {e}")
+            raise
 
         resp = Response(
             status=httpx_response.status_code,
