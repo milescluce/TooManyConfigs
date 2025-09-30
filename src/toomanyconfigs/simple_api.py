@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import httpx
+from httpx import Response
 from loguru import logger as log
 from pickleclass import PickleClass
 
@@ -12,7 +13,7 @@ class SimpleAPIResponse:
     status: int
     method: str
     headers: dict
-    body: Any
+    body: dict | str
 
 
 class SimpleAPI(PickleClass):
@@ -45,29 +46,18 @@ class SimpleAPI(PickleClass):
             return self.cache[cache_key]
         return None
 
-    def _make_response(self, httpx_response, method: str) -> SimpleAPIResponse:
-        """Convert httpx response to our Response object"""
+    def _make_response(self, httpx_response: Response, method: str) -> SimpleAPIResponse:
         try:
-            content_type = httpx_response.headers.get("Content-Type", "")
-
-            if not httpx_response.content:
-                content = ""
-            elif "json" in content_type:
-                try:
-                    content = httpx_response.json()
-                except (ValueError, json.JSONDecodeError):
-                    content = httpx_response.text
-            else:
-                content = httpx_response.text
+            body = httpx_response.json()
         except Exception as e:
-            log.warning(f"{self}: Response decode error: {e}")
-            raise
+            log.warning(f"{self}: Could not get JSON from {httpx_response.request.url}\n  - Returning string instead: {e}")
+            body = httpx_response
 
         return SimpleAPIResponse(
             status=httpx_response.status_code,
             method=method,
             headers=dict(httpx_response.headers),
-            body=content,
+            body=body,
         )
 
     def request(self, method: str, path: str = "", force_refresh: bool = False,
@@ -90,6 +80,8 @@ class SimpleAPI(PickleClass):
         # Make request
         with httpx.Client(headers=request_headers) as client:
             response = client.request(method.upper(), full_path, **kwargs)
+            log.debug(f"{self}: Got raw HTTP response for {method.upper()} request to {full_path}: \n{response.__dict__}")
+
 
         # Create response object
         result = self._make_response(response, method)
@@ -121,6 +113,7 @@ class SimpleAPI(PickleClass):
         # Make request
         async with httpx.AsyncClient(headers=request_headers) as client:
             response = await client.request(method.upper(), full_path, **kwargs)
+            log.debug(f"{self}: Got raw HTTP response for {method.upper()} request to {full_path}: \n{response.__dict__}")
 
         # Create response object
         result = self._make_response(response, method)
