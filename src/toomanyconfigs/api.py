@@ -186,21 +186,21 @@ class Response:
         return index
 
 
-class ResponseFields:
-    path: str
-    status: str
-    method: str
-    headers: str
-    body: str
-
-
 class Receptionist(_API):
     cache: dict[str | Response] = {}
     database: Any
 
     def __init__(self, config: APIConfig | Path | None = None, database: bool = False):
-        from p2d2 import Database, Schema
         _API.__init__(self, config)
+
+        from p2d2 import Database, Table, Schema
+
+        class ResponseFields(Table):
+            path: str
+            status: str
+            method: str
+            headers: str
+            body: str
 
         class APISchema(Schema):
             responses: ResponseFields
@@ -252,7 +252,7 @@ class Receptionist(_API):
 
         if self.database_enabled:
             from p2d2 import Database
-            df = getattr(self.database, "responses")
+            df = self.database.get_table("responses")
             match = df[(df['path'] == path) & (df['method'] == method)]
             if not match.empty:
                 first_match = match.iloc[0]
