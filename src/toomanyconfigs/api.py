@@ -199,14 +199,14 @@ class Receptionist(_API):
     database: Any
 
     def __init__(self, config: APIConfig | Path | None = None, database: bool = False):
-        from p2d2 import Database
+        from p2d2 import Database, Schema
         _API.__init__(self, config)
 
-        class APIDB(Database):
+        class APISchema(Schema):
             responses: ResponseFields
 
         if database:
-            self.database: Database = APIDB(db_name=self.__class__.__name__)
+            self.database: Database = Database(APISchema)
 
     def __repr__(self):
         return f"[{self.__class__.__name__}]"
